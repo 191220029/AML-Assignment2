@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::ops::Add;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tch::vision::dataset::Dataset;
+use tch::Kind::{Double, Float, Int64};
 use tch::Tensor;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,7 +13,7 @@ struct Data {
     customer_id: String,
     surname: String,
     credit_score: f64,
-    geography: String,
+    geography: f64,
     gender: u8,
     age: f64,
     tenure: f64,
@@ -34,7 +34,23 @@ impl From<&String> for Data {
             customer_id: (v.get(1).unwrap()).to_string(),
             surname: (v.get(2).unwrap()).to_string(),
             credit_score: f64::from_str(v.get(3).unwrap()).unwrap(),
-            geography: (v.get(4).unwrap()).to_string(),
+            geography: if let Some(v) = v.get(4) {
+                if v.len() > 0 {
+                    if *v == "France" {
+                        1.
+                    } else if *v == "Germany" {
+                        2.
+                    } else if *v == "Spain" {
+                        3.
+                    } else {
+                        panic!("Unhandled geography {}", v);
+                    }
+                } else {
+                    f64::INFINITY
+                }
+            } else {
+                f64::INFINITY
+            },
             gender: if *v.get(5).unwrap() == "Female" { 0 } else { 1 },
             age: if let Some(x) = v.get(6) {
                 if x.len() > 0 {
@@ -78,25 +94,53 @@ impl From<&String> for Data {
 
 /// Gets train_data and test_data.
 pub fn get_dataset(train_data_file: PathBuf, test_data_file: PathBuf) -> Dataset {
+    let get_data_tensor = |raw_data: &Vec<Data>| {
+        let mut data_slice = vec![];
+        raw_data.iter().for_each(|d| {
+            data_slice.append(&mut vec![
+                d.geography,
+                d.credit_score,
+                d.gender as f64,
+                d.age,
+                d.tenure,
+                d.balance,
+                d.num_of_products,
+                d.has_cr_card,
+                d.is_active_member,
+                d.estimated_salary,
+            ])
+        });
+
+        Tensor::from_slice(data_slice.as_slice()).reshape([raw_data.len() as i64, 10])
+    };
+
     let train_raw_data = fit_data(read_csv(train_data_file));
 
-    // let mut geography_map = HashMap::new();
+    let train_data = get_data_tensor(&train_raw_data).to_dtype(Float, false, true);
 
-    let mut train_data_slice = vec![];
-    train_raw_data.iter().for_each(|d| {
-        train_data_slice.append(&mut vec![d.credit_score, d.gender as f64, d.age, d.tenure, d.balance, d.num_of_products, d.has_cr_card, d.is_active_member, d.estimated_salary])
-    });
+    let train_label = Tensor::from_slice(
+        train_raw_data
+            .iter()
+            .map(|d| d.exited as f64)
+            .collect::<Vec<f64>>()
+            .as_slice(),
+    )
+    .reshape([train_raw_data.len() as i64, 1])
+        .to_dtype(Float, false, true);
 
-    let mut train_data = Tensor::from_slice(train_data_slice.as_slice());
-    train_data = train_data.reshape([(train_data_slice.len() / 9) as i64, 9]);
+    let test_raw_data = fit_data(read_csv(test_data_file));
 
-    println!("{}", train_data);
+    let test_data = get_data_tensor(&test_raw_data).to_dtype(Float, false, true);
+    let test_label = Tensor::from_slice(vec![0.].repeat(test_raw_data.len()).as_slice())
+        .reshape([1, test_raw_data.len() as i64]);
 
-    train_raw_data.into_iter().for_each(|d| {
-
-    });
-
-    unimplemented!();
+    Dataset {
+        train_images: train_data,
+        train_labels: train_label,
+        test_images: test_data,
+        test_labels: test_label,
+        labels: train_raw_data.len() as i64,
+    }
 }
 
 /// Fills the holes in raw data.
@@ -105,9 +149,11 @@ pub fn get_dataset(train_data_file: PathBuf, test_data_file: PathBuf) -> Dataset
 ///
 /// Step2. Fill age holes with avg.
 ///
-/// Step3. Fill has_cr_card holes with '0.0' and '1.0'.
+/// Step3. Fill geography holes with '1.0', '2.0' and '3.0'.
 ///
-/// Step4. Fill is_active_member holes with '0.0' and '1.0'.
+/// Step4. Fill has_cr_card holes with '0.0' and '1.0'.
+///
+/// Step5. Fill is_active_member holes with '0.0' and '1.0'.
 
 fn fit_data(mut datas: Vec<Data>) -> Vec<Data> {
     let mut fitted_data = vec![];
@@ -127,6 +173,16 @@ fn fit_data(mut datas: Vec<Data>) -> Vec<Data> {
     datas.into_iter().for_each(|mut d| {
         if d.age == f64::INFINITY {
             d.age = avg_age;
+        }
+
+        if d.geography == f64::INFINITY {
+            d.geography = 1.;
+            let mut u = d.clone();
+            u.geography = 2.;
+            let mut v = d.clone();
+            v.geography = 3.;
+
+            fitted_data.append(&mut fit_data(vec![d.clone(), u, v]));
         }
 
         fitted_data.append(&mut if d.has_cr_card == f64::INFINITY {
@@ -188,10 +244,10 @@ mod test_dataset {
 
     #[test]
     fn test_get_dataset() {
-            get_dataset(
-                PathBuf::from("data/train.csv"),
-                PathBuf::from("data/test.csv")
-            );
+        get_dataset(
+            PathBuf::from("data/train.csv"),
+            PathBuf::from("data/test.csv"),
+        );
     }
 
     #[test]
@@ -216,7 +272,7 @@ mod test_dataset {
                 customer_id: "15723217".to_string(),
                 surname: "Cremonesi".to_string(),
                 credit_score: 616.0,
-                geography: "France".to_string(),
+                geography: 1.0,
                 gender: 1,
                 age: 37.0,
                 tenure: 9.0,
@@ -232,7 +288,7 @@ mod test_dataset {
                 customer_id: "15733111".to_string(),
                 surname: "Yeh".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: 32.0,
                 tenure: 6.0,
@@ -248,7 +304,7 @@ mod test_dataset {
                 customer_id: "15733119".to_string(),
                 surname: "Yee".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: f64::INFINITY,
                 tenure: 6.0,
@@ -267,7 +323,7 @@ mod test_dataset {
                 customer_id: "15723217".to_string(),
                 surname: "Cremonesi".to_string(),
                 credit_score: 616.0,
-                geography: "France".to_string(),
+                geography: 1.0,
                 gender: 1,
                 age: 37.0,
                 tenure: 9.0,
@@ -283,7 +339,7 @@ mod test_dataset {
                 customer_id: "15733111".to_string(),
                 surname: "Yeh".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: 32.0,
                 tenure: 6.0,
@@ -299,7 +355,7 @@ mod test_dataset {
                 customer_id: "15733119".to_string(),
                 surname: "Yee".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: 34.5,
                 tenure: 6.0,
@@ -315,7 +371,7 @@ mod test_dataset {
                 customer_id: "15733119".to_string(),
                 surname: "Yee".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: 34.5,
                 tenure: 6.0,
@@ -331,7 +387,7 @@ mod test_dataset {
                 customer_id: "15733119".to_string(),
                 surname: "Yee".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: 34.5,
                 tenure: 6.0,
@@ -347,7 +403,7 @@ mod test_dataset {
                 customer_id: "15733119".to_string(),
                 surname: "Yee".to_string(),
                 credit_score: 688.0,
-                geography: "Spain".to_string(),
+                geography: 3.0,
                 gender: 1,
                 age: 34.5,
                 tenure: 6.0,
