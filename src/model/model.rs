@@ -1,5 +1,5 @@
 use tch::nn;
-use tch::nn::{LinearConfig, Module};
+use tch::nn::Module;
 
 fn get_model(vs: &nn::Path, in_dim: i64, out_dim: i64) -> impl Module {
     nn::seq()
