@@ -38,8 +38,8 @@ fn main() {
         // 反向传播
         opt.backward_step(&loss);
 
-        // 计算测试集上的精度
-        let val_accuracy = net.forward(&dataset.train_images).accuracy_for_logits(&dataset.train_labels);
+        // 计算精度
+        let val_accuracy = res.accuracy_for_logits(&dataset.train_labels);
         println!(
             "epoch: {:4} train loss: {:8.5} val acc: {:5.2}%",
             epoch,
