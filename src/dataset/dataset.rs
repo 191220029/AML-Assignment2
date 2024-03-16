@@ -1,11 +1,7 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::ops::Add;
+use std::fs::{remove_file, File};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
-use tch::vision::dataset::Dataset;
-use tch::Kind::{Double, Float, Int64};
-use tch::Tensor;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Data {
@@ -93,54 +89,16 @@ impl From<&String> for Data {
 }
 
 /// Gets train_data and test_data.
-pub fn get_dataset(train_data_file: PathBuf, test_data_file: PathBuf) -> Dataset {
-    let get_data_tensor = |raw_data: &Vec<Data>| {
-        let mut data_slice = vec![];
-        raw_data.iter().for_each(|d| {
-            data_slice.append(&mut vec![
-                d.geography,
-                d.credit_score,
-                d.gender as f64,
-                d.age,
-                d.tenure,
-                d.balance,
-                d.num_of_products,
-                d.has_cr_card,
-                d.is_active_member,
-                d.estimated_salary,
-            ])
-        });
+pub fn fit_dataset(
+    train_data_file: PathBuf,
+    test_data_file: PathBuf,
+    fitted_data_file: &PathBuf,
+    fitted_test_data: &PathBuf,
+) -> anyhow::Result<()> {
+    write_csv(fitted_data_file, fit_data(read_csv(train_data_file)))?;
+    write_csv(fitted_test_data, fit_data(read_csv(test_data_file)))?;
 
-        Tensor::from_slice(data_slice.as_slice()).reshape([raw_data.len() as i64, 10])
-    };
-
-    let train_raw_data = fit_data(read_csv(train_data_file));
-
-    let train_data = get_data_tensor(&train_raw_data).to_dtype(Float, false, true);
-
-    let train_label = Tensor::from_slice(
-        train_raw_data
-            .iter()
-            .map(|d| d.exited as f64)
-            .collect::<Vec<f64>>()
-            .as_slice(),
-    )
-    .reshape([train_raw_data.len() as i64, 1])
-        .to_dtype(Float, false, true);
-
-    let test_raw_data = fit_data(read_csv(test_data_file));
-
-    let test_data = get_data_tensor(&test_raw_data).to_dtype(Float, false, true);
-    let test_label = Tensor::from_slice(vec![0.].repeat(test_raw_data.len()).as_slice())
-        .reshape([1, test_raw_data.len() as i64]);
-
-    Dataset {
-        train_images: train_data,
-        train_labels: train_label,
-        test_images: test_data,
-        test_labels: test_label,
-        labels: train_raw_data.len() as i64,
-    }
+    Ok(())
 }
 
 /// Fills the holes in raw data.
@@ -155,7 +113,7 @@ pub fn get_dataset(train_data_file: PathBuf, test_data_file: PathBuf) -> Dataset
 ///
 /// Step5. Fill is_active_member holes with '0.0' and '1.0'.
 
-fn fit_data(mut datas: Vec<Data>) -> Vec<Data> {
+fn fit_data(datas: Vec<Data>) -> Vec<Data> {
     let mut fitted_data = vec![];
     let mut valid_age_number = 0;
     let mut avg_age = 0.;
@@ -237,18 +195,57 @@ fn read_csv(path: PathBuf) -> Vec<Data> {
     v
 }
 
+fn write_csv(path: &PathBuf, data: Vec<Data>) -> anyhow::Result<()> {
+    let _ = remove_file(path);
+    let f = File::create(path)?;
+
+    let mut writer = BufWriter::new(f);
+    writer.write_all(
+        &data
+            .iter()
+            .map(|d| {
+                if d.exited == -1 {
+                    format!(
+                        "{},{},{},{},{},{},{},{},{},{}\n",
+                        d.credit_score,
+                        d.geography,
+                        d.gender,
+                        d.age,
+                        d.tenure,
+                        d.balance,
+                        d.num_of_products,
+                        d.has_cr_card,
+                        d.is_active_member,
+                        d.estimated_salary
+                    )
+                } else {
+                    format!(
+                        "{},{},{},{},{},{},{},{},{},{},{}\n",
+                        d.credit_score,
+                        d.geography,
+                        d.gender,
+                        d.age,
+                        d.tenure,
+                        d.balance,
+                        d.num_of_products,
+                        d.has_cr_card,
+                        d.is_active_member,
+                        d.estimated_salary,
+                        d.exited
+                    )
+                }
+            })
+            .collect::<String>()
+            .as_bytes(),
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test_dataset {
-    use crate::dataset::dataset::{fit_data, get_dataset, read_csv, Data};
+    use crate::dataset::dataset::{fit_data, fit_dataset, read_csv, Data};
     use std::path::PathBuf;
-
-    #[test]
-    fn test_get_dataset() {
-        get_dataset(
-            PathBuf::from("data/train.csv"),
-            PathBuf::from("data/test.csv"),
-        );
-    }
 
     #[test]
     fn test_read_csv() {
