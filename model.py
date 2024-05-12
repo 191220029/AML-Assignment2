@@ -22,8 +22,8 @@ class Model(torch.nn.Module):
             self.seq = self.seq.cuda(0)
         self.in_features = in_features
         self.out_features = out_features
-        self.optimizer = torch.optim.SGD(self.parameters(), lr=0.1)
-        self.loss_function = torch.nn.MSELoss()
+        self.optimizer = torch.optim.SGD(self.parameters(), lr=0.01)
+        self.loss_function = torch.nn.SmoothL1Loss()
         
     def forward(self,x):
         out = self.seq(x)
