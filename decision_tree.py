@@ -53,11 +53,9 @@ def main():
 
     # Train the decision tree model
     model = Model()
-    # model.train(X_train, y_train)
     model.train(new_train_data, new_train_label)
 
     # Evaluate the model on the validation set
-    # accuracy, f1 = model.compute_metrics(X_val, y_val)
     accuracy, f1 = model.compute_metrics(new_train_data, new_train_label)
     print(f"Validation Accuracy on train data: {accuracy:.2f}%, F1 Score: {f1:.2f}")
 
