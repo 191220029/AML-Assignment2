@@ -16,12 +16,12 @@ fn main() {
     )
     .unwrap();
 
-    let train_data_file = PathBuf::from("data/fit_train.csv");
-    let test_test_file = PathBuf::from("data/fit_Churn_Modelling.csv");
+    let train_data_file = PathBuf::from("data/fit_Churn_Modelling.csv");
+    let test_test_file = PathBuf::from("data/fit_test_verify.csv");
 
     fit_dataset(
-        PathBuf::from("data/train.csv"),
         PathBuf::from("data/Churn_Modelling.csv"),
+        PathBuf::from("data/test_verify.csv"),
         &train_data_file,
         &test_test_file,
     )

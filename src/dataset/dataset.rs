@@ -39,7 +39,8 @@ impl From<&String> for Data {
                     } else if *v == "Spain" {
                         3.
                     } else {
-                        panic!("Unhandled geography {}", v);
+                        eprintln!("Unhandled geography {}", v);
+                        4.
                     }
                 } else {
                     f64::INFINITY
@@ -78,7 +79,7 @@ impl From<&String> for Data {
             } else {
                 0.
             },
-            estimated_salary: f64::from_str(v.get(12).unwrap()).unwrap(),
+            estimated_salary: f64::from_str(v.get(12).unwrap_or(&"0")).unwrap(),
             exited: if let Some(x) = v.get(13) {
                 i8::from_str(*x).unwrap()
             } else {

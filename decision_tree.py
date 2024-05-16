@@ -28,7 +28,7 @@ def main():
     train = ds.get_data(args[1])
     test = ds.get_data(args[2])
     
-    train_data = train[:, :10]
+    train_data = train[:, :-1]
     train_label = train[:, -1]
     test_data = test
 
@@ -67,14 +67,14 @@ def main():
     
     # Verify the model on a separate dataset
     verify = ds.get_data("data/fit_test_verify.csv")
-    verify_data = verify[:, :10]
+    verify_data = verify[:, :-1]
     verify_label = verify[:, -1]
 
     accuracy, f1 = model.compute_metrics(verify_data, verify_label)
     print(f"Verification Accuracy on test: {accuracy:.2f}%, F1 Score: {f1:.2f}")
 
     verify = ds.get_data("data/fit_Churn_Modelling.csv")
-    verify_data = verify[:, :10]
+    verify_data = verify[:, :-1]
     verify_label = verify[:, -1]
 
     accuracy, f1 = model.compute_metrics(verify_data, verify_label)
