@@ -1,4 +1,4 @@
-row_number,customer_id,surname,credit_score,geography,gender,age,tenure,balance,num_of_products,has_cr_card,is_active_member,estimated_salary
+RowNumber,CustomerId,Surname,CreditScore,Geography,Gender,Age,Tenure,Balance,NumOfProducts,HasCrCard,IsActiveMember,EstimatedSalary
 9001,15723217,Cremonesi,616,France,Male,37,9,0,1,1,0,111312.96
 9002,15733111,Yeh,688,Spain,Male,32,6,124179.3,1,1,1,138759.15
 9003,15610727,Ch'in,605,France,Male,36,7,128829.25,1,1,0,190588.59
