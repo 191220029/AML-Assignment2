@@ -3,33 +3,36 @@ import sys
 import ds
 import numpy as np
 from torch.utils.data import TensorDataset, DataLoader
+from sklearn.metrics import f1_score
 
 class Model(torch.nn.Module):
     def __init__(self, in_features, out_features, device):
         super().__init__()
         self.seq = torch.nn.Sequential(
             torch.nn.Linear(in_features, 10),
-            torch.nn.Sigmoid(),
+            torch.nn.Tanh(),
             torch.nn.Linear(10, 128),
-            torch.nn.ReLU(),
+            torch.nn.Tanh(),
             torch.nn.Linear(128, 128),
-            torch.nn.ReLU(),
+            torch.nn.Tanh(),
+            torch.nn.Linear(128, 128),
+            torch.nn.Tanh(),
             torch.nn.Linear(128, out_features),
-            torch.nn.Sigmoid(),
-        )  
+            torch.nn.Sigmoid()
+        )
 
         if device:
             self.seq = self.seq.cuda(0)
         self.in_features = in_features
         self.out_features = out_features
-        self.optimizer = torch.optim.SGD(self.parameters(), lr=0.01)
-        self.loss_function = torch.nn.SmoothL1Loss()
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=0.01)
+        self.loss_function = torch.nn.BCELoss()
         
     def forward(self,x):
         out = self.seq(x)
         return out
     
-    def train(self, epochs: int, train_loader: DataLoader, model_save_path="model.pth"):
+    def train(self, epochs: int, train_loader: DataLoader, verify_loader: DataLoader, model_save_path="model.pth"):
         for epoch in range(epochs):
             for data, label in train_loader:
                 if torch.cuda.is_available():
@@ -42,11 +45,13 @@ class Model(torch.nn.Module):
                 loss.backward()
                 self.optimizer.step()
                 
-            acc = self.compute_accuracy(train_loader)
-            print("epoch: {}, loss = {}, acc = {}".format(epoch, loss.item(), acc))
+            acc, f1 = self.compute_metrics(verify_loader)
+            print("epoch: {}, loss = {}, acc = {:.2f}%, F1 = {:.2f}".format(epoch, loss.item(), acc, f1))
         torch.save(self, model_save_path)
         
-    def compute_accuracy(self, data_loader):
+    def compute_metrics(self, data_loader):
+        true_labels = []
+        predicted_labels = []
         correct = 0
         total = 0
         with torch.no_grad():
@@ -57,9 +62,13 @@ class Model(torch.nn.Module):
                 
                 prediction = self.forward(data)
                 predicted_classes = torch.round(prediction)
+                true_labels.extend(label.cpu().numpy())
+                predicted_labels.extend(predicted_classes.cpu().numpy())
                 correct += (predicted_classes == label).sum().item()
                 total += label.size(0)
-        return (correct / total) * 100
+        accuracy = (correct / total) * 100
+        f1 = f1_score(true_labels, predicted_labels)
+        return accuracy, f1
 
 def main(): 
     args = sys.argv
@@ -116,7 +125,7 @@ def main():
 
     model = Model(10, 1, device)
     for data_loader in data_loaders:
-        model.train(1000, data_loader, "linear.pth")
+        model.train(1000, data_loader, entire_train_loader, "linear.pth")
 
     test_predictions = torch.round(model.forward(test_data))
     with open("522023330025.txt", "w") as f:
@@ -130,7 +139,8 @@ def main():
     verify_dataset = TensorDataset(verify_data, verify_label)
     verify_loader = DataLoader(verify_dataset, batch_size=verify_label.size(dim=0), shuffle=True)
 
-    print(f"{model.compute_accuracy(verify_loader)}%")
+    print(f"{model.compute_metrics(entire_train_loader)}%")
+    print(f"{model.compute_metrics(verify_loader)}%")
 
 if __name__ == '__main__':
     main()
