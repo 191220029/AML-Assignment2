@@ -6,7 +6,13 @@ from sklearn.metrics import accuracy_score, f1_score
 
 class Model:
     def __init__(self):
-        self.model = DecisionTreeClassifier()
+        self.model = DecisionTreeClassifier( 
+            max_depth=20,              # Limit the depth of the tree
+            min_samples_split=10,     # Minimum number of samples required to split an internal node
+            min_samples_leaf=5,       # Minimum number of samples required to be at a leaf node
+            max_features='sqrt',      # Consider a subset of features for splitting
+            random_state=42           # For reproducibility
+        )
 
     def train(self, train_data, train_label):
         self.model.fit(train_data, train_label.ravel())

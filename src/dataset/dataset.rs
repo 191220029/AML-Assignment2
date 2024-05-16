@@ -43,10 +43,10 @@ impl From<&String> for Data {
                         4.
                     }
                 } else {
-                    f64::INFINITY
+                    0.
                 }
             } else {
-                f64::INFINITY
+                0.
             },
             gender: if *v.get(5).unwrap() == "Female" { 0 } else { 1 },
             age: if let Some(x) = v.get(6) {
@@ -245,7 +245,7 @@ fn write_csv(path: &PathBuf, data: Vec<Data>) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod test_dataset {
-    use crate::dataset::dataset::{fit_data, fit_dataset, read_csv, Data};
+    use crate::dataset::dataset::{fit_data, read_csv, Data};
     use std::path::PathBuf;
 
     #[test]
