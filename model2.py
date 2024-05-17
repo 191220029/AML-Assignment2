@@ -6,13 +6,14 @@ import copy
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, GradientBoostingRegressor
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
+from sklearn.preprocessing import LabelEncoder
 
 # 自定义数据集类省略，假设已定义
 class CustomDataset():
@@ -25,11 +26,59 @@ class CustomDataset():
         if(self.label_column == None):
             self.label_column = self.selected_columns[-1]
         
+        self.data_full = self.data.copy()  # 保存完整的数据
         self.Handling_missing_values()
 
-        print("-"*50)
-        print("selected_columns : ",self.selected_columns)
-        print("DataFrame.column : ",self.data.columns)
+
+    def predict_missing_values(self):
+        # 用训练好的模型预测缺失值
+        missing_data = self.data_full[self.data_full.isna().any(axis=1)]
+        non_missing_data = self.data_full[self.selected_columns].dropna()
+        
+        for column in self.selected_columns:
+            if column == self.label_column or not missing_data[column].isna().any():
+                continue
+
+            cur_missing_data = self.data_full[self.data_full[column].isna()]
+            if(cur_missing_data.size == 0):
+                continue
+
+
+            # 检查列是否为分类变量
+            # model = CatBoostClassifier(verbose=0)
+            if non_missing_data[column].dtype == 'object':
+                # model = GradientBoostingClassifier(random_state=42)
+                # model = CatBoostClassifier(verbose=0)
+                clf_gbdt = GradientBoostingClassifier()
+                clf_catboost = CatBoostClassifier(verbose=0)
+                model = VotingClassifier(estimators=[
+                    ('gbdt', clf_gbdt),
+                    ('catboost', clf_catboost)
+                ], voting='soft')
+                label_encoder = LabelEncoder()
+                y_non_missing = label_encoder.fit_transform(non_missing_data[column])
+            else:
+                model = GradientBoostingRegressor(random_state=42)
+                y_non_missing = non_missing_data[column]
+                
+            # 拆分有缺失值的列为特征和标签
+            X_non_missing = non_missing_data.drop(columns=[column])
+            
+            # 训练模型
+            model.fit(X_non_missing, y_non_missing)
+            
+            # 预测缺失值
+            X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
+            predicted = model.predict(X_missing)
+            
+            if non_missing_data[column].dtype == 'object':
+                predicted = label_encoder.inverse_transform(predicted)
+            
+            cur_missing_data.loc[:, column] = predicted
+            self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
+    
+        self.data_full = self.data_full[self.selected_columns]
+        train_dataset.data = train_dataset.data_full
     
     def Handling_missing_values(self):
         self.data = self.data.dropna()
@@ -67,12 +116,16 @@ class CustomDataset():
         print(self.data[self.selected_columns].dtypes)
 
     def discretization(self):
-        print("-"*50)
+        # print("-"*50)
         for column in self.selected_columns:
             data_column = self.data[column]
             if(data_column.dtype == 'str' or data_column.dtype == 'object'):
-                print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
+                # print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
                 self.data[column] = self.data[column].astype('category').cat.codes
+            data_column = self.data_full[column]
+            if(data_column.dtype == 'str' or data_column.dtype == 'object'):
+                # print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
+                self.data_full[column] = self.data_full[column].astype('category').cat.codes
     def normalized(self):
         legal_columns = copy.deepcopy(self.selected_columns)
         if(self.label_column in legal_columns):
@@ -80,6 +133,10 @@ class CustomDataset():
         mean = self.data[legal_columns].mean()
         std = self.data[legal_columns].std()
         self.data[legal_columns] = (self.data[legal_columns] - mean)/std
+        mean = self.data_full[legal_columns].mean()
+        std = self.data_full[legal_columns].std()
+        self.data_full[legal_columns] = (self.data_full[legal_columns] - mean)/std
+    
     def getx(self):
         legal_columns = copy.deepcopy(self.selected_columns)
         if(self.label_column in legal_columns):
@@ -90,35 +147,54 @@ class CustomDataset():
     def __len__(self):
         return len(self.data)
 
+class CustomTestDataset():
+    def __init__(self, file_path, selected_columns=None):
+        self.data = pd.read_csv(file_path)  # 读取CSV文件
+        self.selected_columns = selected_columns
+        if(self.selected_columns == None):
+            self.selected_columns = self.data.columns
+        
+        self.data_full = self.data.copy()  # 保存完整的数据
+
+    def discretization(self):
+        for column in self.selected_columns:
+            data_column = self.data[column]
+            if(data_column.dtype == 'str' or data_column.dtype == 'object'):
+                self.data[column] = self.data[column].astype('category').cat.codes
+    def normalized(self):
+        legal_columns = copy.deepcopy(self.selected_columns)
+        mean = self.data[legal_columns].mean()
+        std = self.data[legal_columns].std()
+        self.data[legal_columns] = (self.data[legal_columns] - mean)/std
+    def getx(self):
+        legal_columns = copy.deepcopy(self.selected_columns)
+        return self.data[legal_columns].to_numpy()
+    def __len__(self):
+        return len(self.data)
+
+
 def eval(pred,y_true,mu):
-    # print(pred.shape,y_true.shape)
     y_pred = np.where(pred[:,1] > mu,1,0)
-    y_score = pred[:,1]
-    # accuracy = accuracy_score(y_true, y_pred)
-    # recall = recall_score(y_true, y_pred)
-    # precision = precision_score(y_true, y_pred)
     f1 = f1_score(y_true, y_pred)
-    # p,r,_ = precision_recall_curve(y_true,y_score)
-    # auprc = auc(r,p)
-    # print("acc : ",accuracy)
-    # print("recall : ",recall)
-    # print("precision : ",precision)
     print("f1 : ",f1)
-    # print("auprc : ",auprc)
 
+def save_pred(pred, mu, pth):
+    y_pred = np.where(pred[:,1] > mu,1,0)
+    with open(pth, "w") as f:
+        for x in y_pred.tolist():
+            f.write(f"{int(x)}\n")
 
-train_field = ['Surname','CreditScore','Geography','Gender','Age',\
+train_field = ['CreditScore','Geography','Gender','Age',\
                'Tenure','Balance','NumOfProducts','HasCrCard','IsActiveMember','EstimatedSalary', 'Exited']
+test_field = ['CreditScore','Geography','Gender','Age',\
+               'Tenure','Balance','NumOfProducts','HasCrCard','IsActiveMember','EstimatedSalary']
 
 # 读取并处理训练集数据
 train_dataset = CustomDataset('./data/train.csv', train_field)
-train_dataset.describe()
+# train_dataset.describe()
 train_dataset.discretization()
 train_dataset.normalized()
-train_dataset.describe()
-
-data, target = train_dataset.getx(), train_dataset.gety()
-X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
+# train_dataset.describe()
 
 # 定义各模型
 clf_knn = KNeighborsClassifier()
@@ -133,23 +209,51 @@ clf_xgb = XGBClassifier()
 clf_lgb = LGBMClassifier()
 clf_catboost = CatBoostClassifier(verbose=0)
 
-# 组合成投票分类器
+# train_dataset.predict_missing_values()
+train_dataset.discretization()
+train_dataset.normalized()
+# train_dataset.describe()
+
+data, target = train_dataset.getx(), train_dataset.gety()
+X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
+
 voting_clf = VotingClassifier(estimators=[
-    ('knn', clf_knn),
-    ('nb', clf_nb),
-    ('dt', clf_dt),
-    ('rf', clf_rf),
-    ('lr', clf_lr),
-    ('svm', clf_svm),
-    ('mlp', clf_mlp),
+    # ('knn', clf_knn),
+    # ('nb', clf_nb),
+    # ('dt', clf_dt),
+    # ('rf', clf_rf),
+    # ('lr', clf_lr),
+    # ('svm', clf_svm),
+    # ('mlp', clf_mlp),
     ('gbdt', clf_gbdt),
-    ('xgb', clf_xgb),
-    ('lgb', clf_lgb),
     ('catboost', clf_catboost)
 ], voting='soft')
+
+
+thre = 0.4
 
 # 训练和评估
 voting_clf.fit(X_train, y_train)
 y_pred_voting_valid = voting_clf.predict_proba(X_valid)
 print("---------- VotingClassifier Valid Eval ----------")
-eval(y_pred_voting_valid, y_valid, 0.3)
+eval(y_pred_voting_valid, y_valid, thre)
+
+verify_dataset = CustomDataset('./data/test_verify.csv', train_field)
+verify_dataset.discretization()
+verify_dataset.normalized()
+_, target = verify_dataset.getx(), verify_dataset.gety()
+# y_pred_voting_valid = voting_clf.predict_proba(data)
+# print("---------- VotingClassifier Valid Eval ----------")
+# eval(y_pred_voting_valid, target, thre)
+# save_pred(y_pred_voting_valid, thre, 'verify.txt')
+
+test_dataset = CustomTestDataset('./data/test.csv', test_field)
+test_dataset.discretization()
+test_dataset.normalized()
+data=test_dataset.getx()
+y_pred_voting_valid = voting_clf.predict_proba(data)
+print("---------- VotingClassifier Test Eval ----------")
+eval(y_pred_voting_valid, target, thre)
+save_pred(y_pred_voting_valid, thre, '522023330025.txt')
+
+
