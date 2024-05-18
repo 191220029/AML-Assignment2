@@ -14,6 +14,8 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from sklearn.preprocessing import LabelEncoder
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 
 # 自定义数据集类省略，假设已定义
 class CustomDataset():
@@ -36,7 +38,7 @@ class CustomDataset():
         non_missing_data = self.data_full[self.selected_columns].dropna()
         
         for column in self.selected_columns:
-            if column == self.label_column or not missing_data[column].isna().any():
+            if column == self.label_column:
                 continue
 
             cur_missing_data = self.data_full[self.data_full[column].isna()]
@@ -82,6 +84,7 @@ class CustomDataset():
     
     def Handling_missing_values(self):
         self.data = self.data.dropna()
+
 
     def print(self):
         dataset = self.data[self.selected_columns]
@@ -191,16 +194,15 @@ test_field = ['CreditScore','Geography','Gender','Age',\
 
 # 读取并处理训练集数据
 train_dataset = CustomDataset('./data/train.csv', train_field)
-# train_dataset.describe()
 train_dataset.discretization()
 train_dataset.normalized()
-# train_dataset.describe()
 
 # 定义各模型
 clf_knn = KNeighborsClassifier()
 clf_nb = GaussianNB()
 clf_dt = DecisionTreeClassifier()
-clf_rf = RandomForestClassifier(random_state=42)
+clf_rf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
+clf_xgbc = XGBClassifier()
 clf_lr = LogisticRegression()
 clf_svm = SVC(probability=True)
 clf_mlp = MLPClassifier()
@@ -210,12 +212,19 @@ clf_lgb = LGBMClassifier()
 clf_catboost = CatBoostClassifier(verbose=0)
 
 # train_dataset.predict_missing_values()
-train_dataset.discretization()
-train_dataset.normalized()
+# train_dataset.discretization()
+# train_dataset.normalized()
 # train_dataset.describe()
 
 data, target = train_dataset.getx(), train_dataset.gety()
 X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
+
+
+
+# oversample = RandomOverSampler(random_state=42)
+# X_train, y_train = oversample.fit_resample(X_train, y_train)
+# undersample = RandomUnderSampler(random_state=42)
+# X_train, y_train = undersample.fit_resample(X_train, y_train)
 
 voting_clf = VotingClassifier(estimators=[
     # ('knn', clf_knn),
@@ -225,8 +234,10 @@ voting_clf = VotingClassifier(estimators=[
     # ('lr', clf_lr),
     # ('svm', clf_svm),
     # ('mlp', clf_mlp),
+    # ('xgbc', clf_xgbc),
+    # ('lgb', clf_lgb),
     ('gbdt', clf_gbdt),
-    ('catboost', clf_catboost)
+    # ('catboost', clf_catboost)
 ], voting='soft')
 
 
@@ -234,6 +245,8 @@ thre = 0.4
 
 # 训练和评估
 voting_clf.fit(X_train, y_train)
+
+
 y_pred_voting_valid = voting_clf.predict_proba(X_valid)
 print("---------- VotingClassifier Valid Eval ----------")
 eval(y_pred_voting_valid, y_valid, thre)
