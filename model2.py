@@ -45,23 +45,8 @@ class CustomDataset():
             if(cur_missing_data.size == 0):
                 continue
 
-
-            # 检查列是否为分类变量
-            # model = CatBoostClassifier(verbose=0)
-            if non_missing_data[column].dtype == 'object':
-                # model = GradientBoostingClassifier(random_state=42)
-                # model = CatBoostClassifier(verbose=0)
-                clf_gbdt = GradientBoostingClassifier()
-                clf_catboost = CatBoostClassifier(verbose=0)
-                model = VotingClassifier(estimators=[
-                    ('gbdt', clf_gbdt),
-                    ('catboost', clf_catboost)
-                ], voting='soft')
-                label_encoder = LabelEncoder()
-                y_non_missing = label_encoder.fit_transform(non_missing_data[column])
-            else:
-                model = GradientBoostingRegressor(random_state=42)
-                y_non_missing = non_missing_data[column]
+            model = GradientBoostingRegressor(random_state=42)
+            y_non_missing = non_missing_data[column]
                 
             # 拆分有缺失值的列为特征和标签
             X_non_missing = non_missing_data.drop(columns=[column])
@@ -72,10 +57,6 @@ class CustomDataset():
             # 预测缺失值
             X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
             predicted = model.predict(X_missing)
-            
-            if non_missing_data[column].dtype == 'object':
-                predicted = label_encoder.inverse_transform(predicted)
-            
             cur_missing_data.loc[:, column] = predicted
             self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
     
@@ -89,45 +70,13 @@ class CustomDataset():
     def print(self):
         dataset = self.data[self.selected_columns]
         print(dataset)
-    def describe(self):
-        # 使用describe()函数获取每一列的统计信息，包括最大值和最小值
-        column_stats = self.data[self.selected_columns].describe()
-        # 使用value_counts()函数获取每一列不同属性值的数量和属性值列表
-        column_value_counts = {}
-        for column in self.selected_columns:
-            value_counts = self.data[column].value_counts()
-            column_value_counts[column] = {
-                'count': len(value_counts),
-                'values': value_counts.index.tolist()
-            }
-        print("-"*20)
-        # 打印每一列的统计信息
-        print("列的最大值和最小值：")
-        print(column_stats)
-
-        # 打印每一列不同属性值的数量和属性值列表
-        print("每一列不同属性值的数量和属性值列表：")
-        for column, info in column_value_counts.items():
-            print(f"列名: {column}")
-            print(f"不同属性值的数量: {info['count']}")
-            if(info['count'] <= 10):
-                print(f"属性值列表: {info['values']}")
-            else:
-                print(f"属性值列表: {info['values'][:10]} ...")
-            print()
-        print("每一列的属性类型:")
-        print(self.data[self.selected_columns].dtypes)
-
     def discretization(self):
-        # print("-"*50)
         for column in self.selected_columns:
             data_column = self.data[column]
             if(data_column.dtype == 'str' or data_column.dtype == 'object'):
-                # print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
                 self.data[column] = self.data[column].astype('category').cat.codes
             data_column = self.data_full[column]
             if(data_column.dtype == 'str' or data_column.dtype == 'object'):
-                # print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
                 self.data_full[column] = self.data_full[column].astype('category').cat.codes
     def normalized(self):
         legal_columns = copy.deepcopy(self.selected_columns)
@@ -212,9 +161,7 @@ clf_lgb = LGBMClassifier()
 clf_catboost = CatBoostClassifier(verbose=0)
 
 # train_dataset.predict_missing_values()
-# train_dataset.discretization()
 # train_dataset.normalized()
-# train_dataset.describe()
 
 data, target = train_dataset.getx(), train_dataset.gety()
 X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
@@ -237,7 +184,7 @@ voting_clf = VotingClassifier(estimators=[
     # ('xgbc', clf_xgbc),
     # ('lgb', clf_lgb),
     ('gbdt', clf_gbdt),
-    # ('catboost', clf_catboost)
+    ('catboost', clf_catboost)
 ], voting='soft')
 
 
