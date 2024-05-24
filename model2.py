@@ -19,7 +19,6 @@ from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.impute import SimpleImputer
 
-# 自定义数据集类省略，假设已定义
 class CustomDataset():
     def __init__(self, file_path, selected_columns=None, label_column=None):
         self.data = pd.read_csv(file_path)  # 读取CSV文件

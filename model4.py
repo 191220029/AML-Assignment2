@@ -1,36 +1,16 @@
-import pandas as pd
-import copy
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score
-from sklearn.linear_model import LogisticRegression, RidgeClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
-from sklearn.preprocessing import LabelEncoder
-from imblearn.over_sampling import RandomOverSampler
-from mlxtend.feature_selection import SequentialFeatureSelector as SFS
-from catboost import CatBoostClassifier
-from scipy.sparse import csr_matrix
-from sklearn.impute import SimpleImputer
-from sklearn.ensemble import AdaBoostClassifier
+from sklearn.metrics import classification_report
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import PolynomialFeatures
-
-def eval(pred, y_true, mu):
-    y_pred = np.where(pred[:, 1] > mu, 1, 0)
-    f1 = f1_score(y_true, y_pred)
-    print("f1:", f1)
+import pandas as pd
+import numpy as np
+from sklearn.metrics import f1_score
 
 df = pd.read_csv('data/train.csv', delimiter=',')
 df.dropna()
 df = df.drop(["RowNumber", "CustomerId", "Surname"], axis = 1)
 
-# df_train = df.sample(frac=0.8,random_state=200)
-# df_train.to_csv('data/df_train.csv')
-
-df_train = pd.read_csv('data/df_train.csv')
-df_train.dropna()
+df_train = df.sample(frac=0.8,random_state=200)
 df_test = df.drop(df_train.index)
 df_train['TenureByAge'] = df_train.Tenure/(df_train.Age)
 df_train['CreditScoreGivenAge'] = df_train.CreditScore/(df_train.Age)
@@ -53,8 +33,10 @@ df_train = df_train.drop(remove, axis=1)
 
 minVec = df_train[continuous_vars].min().copy()
 maxVec = df_train[continuous_vars].max().copy()
-# df_train[continuous_vars] = (df_train[continuous_vars]-minVec)/(maxVec-minVec)
+df_train[continuous_vars] = (df_train[continuous_vars]-minVec)/(maxVec-minVec)
+df_train.dropna()
 
+# data prep pipeline for test data
 def DfPrepPipeline(df_predict,df_train_Cols,minVec,maxVec):
     # Add new features
     df_predict['BalanceSalaryRatio'] = df_predict.Balance/df_predict.EstimatedSalary
@@ -83,51 +65,34 @@ def DfPrepPipeline(df_predict,df_train_Cols,minVec,maxVec):
     for l in L:
         df_predict[str(l)] = -1        
     # MinMax scaling coontinuous variables based on min and max from the train data
-    # df_predict[continuous_vars] = (df_predict[continuous_vars]-minVec)/(maxVec-minVec)
+    df_predict[continuous_vars] = (df_predict[continuous_vars]-minVec)/(maxVec-minVec)
     # Ensure that The variables are ordered in the same way as was ordered in the train set
     df_predict = df_predict[df_train_Cols]
     return df_predict
 
-
+def eval(pred,y_true):
+    f1 = f1_score(y_true, pred)
+    print("f1 : ",f1)
 df_test = DfPrepPipeline(df_test,df_train.columns,minVec,maxVec)
 df_test = df_test.mask(np.isinf(df_test))
 df_test = df_test.dropna()
 
+# Fit Random Forest classifier
+# RF = RandomForestClassifier(bootstrap=True, class_weight=None, criterion='gini',max_depth=8, max_features=6, max_leaf_nodes=None,min_impurity_decrease=0.0,
+#                             min_samples_leaf=1, min_samples_split=3,min_weight_fraction_leaf=0.0, n_estimators=50, n_jobs=None,
+#                             oob_score=False, random_state=None, verbose=0,warm_start=False)
+# RF.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
+# eval(RF.predict(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited)
 
-voting_clf = VotingClassifier(estimators=[
-    ('gbdt', GradientBoostingClassifier()),
-    ('catboost', CatBoostClassifier(verbose=0))
-], voting='soft')
-# ada_clf = AdaBoostClassifier(n_estimators=100000, random_state=42, learning_rate=0.01)
-
-# 训练和评估
-voting_clf.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
-# ada_clf.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
-
-y_pred_voting_valid = voting_clf.predict_proba(df_test.loc[:, df_train.columns != 'Exited'])
-print("---------- VotingClassifier Valid Eval ----------")
-eval(y_pred_voting_valid, df_test.Exited, 0.4)
-# y_pred_voting_valid = ada_clf.predict_proba(df_test.loc[:, df_train.columns != 'Exited'])
-# print("---------- Adaboosting Valid Eval ----------")
-# eval(y_pred_voting_valid, df_test.Exited, 0.4)
-
-df_test=pd.read_csv("data/test_verify.csv")
-df_test = DfPrepPipeline(df_test,df_train.columns,minVec,maxVec)
-eval(voting_clf.predict_proba(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited, 0.4)
-
-RF = RandomForestClassifier(bootstrap=True, class_weight=None, criterion='gini',max_depth=8, max_features=6, max_leaf_nodes=None,min_impurity_decrease=0.0,
-                            min_samples_leaf=1, min_samples_split=3,min_weight_fraction_leaf=0.0, n_estimators=50, n_jobs=None,
-                            oob_score=False, random_state=None, verbose=0,warm_start=False)
-RF.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
-eval(RF.predict_proba(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited, 0.4)
-
+# Fit logistic regression with pol 2 kernel
 poly2 = PolynomialFeatures(degree=2)
 df_train.dropna()
 df_train_pol2 = poly2.fit_transform(df_train.loc[:, df_train.columns != 'Exited'])
-log_pol2 = LogisticRegression(C=10, class_weight=None, dual=False, fit_intercept=True,intercept_scaling=1, max_iter=300, multi_class='auto', n_jobs=None, 
+log_pol2 = LogisticRegression(C=10, class_weight=None, dual=False, fit_intercept=True,intercept_scaling=1, max_iter=300, multi_class='warn', n_jobs=None, 
                               penalty='l2', random_state=None, solver='liblinear',tol=0.0001, verbose=0, warm_start=False)
 log_pol2.fit(df_train_pol2,df_train.Exited)
-df_test_pol2 = poly2.fit_transform(df_test.loc[:, df_train.columns != 'Exited'])
-eval(log_pol2.predict_proba(df_test_pol2), df_test.Exited, 0.4)
 
-
+df_test = pd.read_csv('data/test_verify.csv', delimiter=',')
+df_test = DfPrepPipeline(df_test,df_train.columns,minVec,maxVec)
+# eval(RF.predict(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited)
+eval(log_pol2.predict(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited)
