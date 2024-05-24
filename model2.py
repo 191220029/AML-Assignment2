@@ -1,9 +1,10 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
 import numpy as np
+from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 from sklearn.metrics import f1_score
 import copy
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, GradientBoostingRegressor
@@ -16,6 +17,7 @@ from catboost import CatBoostClassifier
 from sklearn.preprocessing import LabelEncoder
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
+from sklearn.impute import SimpleImputer
 
 # 自定义数据集类省略，假设已定义
 class CustomDataset():
@@ -33,35 +35,59 @@ class CustomDataset():
 
 
     def predict_missing_values(self):
-        # 用训练好的模型预测缺失值
-        missing_data = self.data_full[self.data_full.isna().any(axis=1)]
-        non_missing_data = self.data_full[self.selected_columns].dropna()
+        data_matrix = self.data_full[self.selected_columns].values
+        mask = np.isnan(data_matrix)
         
-        for column in self.selected_columns:
-            if column == self.label_column:
-                continue
+        # 简单填补初始缺失值，避免SVD错误
+        imp = SimpleImputer(strategy="mean")
+        data_matrix_imputed = imp.fit_transform(data_matrix)
+        
+        # 使用SVD进行矩阵补全
+        U, sigma, Vt = np.linalg.svd(data_matrix_imputed, full_matrices=False)
+        sigma = np.diag(sigma)
+        
+        # 选择合适的秩，进行低秩近似
+        k = np.linalg.matrix_rank(sigma) // 2
+        U_k = U[:, :k]
+        sigma_k = sigma[:k, :k]
+        Vt_k = Vt[:k, :]
+        
+        # 重建矩阵
+        data_matrix_reconstructed = np.dot(U_k, np.dot(sigma_k, Vt_k))
+        
+        # 仅填补原始数据中的缺失值
+        data_matrix[mask] = data_matrix_reconstructed[mask]
+        self.data_full[self.selected_columns] = data_matrix
+        self.data = self.data_full
+        # # 用训练好的模型预测缺失值
+        # missing_data = self.data_full[self.data_full.isna().any(axis=1)]
+        # non_missing_data = self.data_full[self.selected_columns].dropna()
+        
+        # for column in self.selected_columns:
+        #     if column == self.label_column:
+        #         continue
 
-            cur_missing_data = self.data_full[self.data_full[column].isna()]
-            if(cur_missing_data.size == 0):
-                continue
+        #     cur_missing_data = self.data_full[self.data_full[column].isna()]
+        #     if(cur_missing_data.size == 0):
+        #         continue
 
-            model = GradientBoostingRegressor(random_state=42)
-            y_non_missing = non_missing_data[column]
+        #     model = GradientBoostingRegressor(random_state=42)
+        #     y_non_missing = non_missing_data[column]
                 
-            # 拆分有缺失值的列为特征和标签
-            X_non_missing = non_missing_data.drop(columns=[column])
+        #     # 拆分有缺失值的列为特征和标签
+        #     X_non_missing = non_missing_data.drop(columns=[column])
             
-            # 训练模型
-            model.fit(X_non_missing, y_non_missing)
+        #     # 训练模型
+        #     model.fit(X_non_missing, y_non_missing)
             
-            # 预测缺失值
-            X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
-            predicted = model.predict(X_missing)
-            cur_missing_data.loc[:, column] = predicted
-            self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
+        #     # 预测缺失值
+        #     X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
+        #     predicted = model.predict(X_missing)
+        #     cur_missing_data.loc[:, column] = predicted
+        #     self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
     
-        self.data_full = self.data_full[self.selected_columns]
-        train_dataset.data = train_dataset.data_full
+        # self.data_full = self.data_full[self.selected_columns]
+        # train_dataset.data = train_dataset.data_full
     
     def Handling_missing_values(self):
         self.data = self.data.dropna()
@@ -160,8 +186,8 @@ clf_xgb = XGBClassifier()
 clf_lgb = LGBMClassifier()
 clf_catboost = CatBoostClassifier(verbose=0)
 
-# train_dataset.predict_missing_values()
-# train_dataset.normalized()
+train_dataset.predict_missing_values()
+train_dataset.normalized()
 
 data, target = train_dataset.getx(), train_dataset.gety()
 X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
@@ -187,14 +213,28 @@ voting_clf = VotingClassifier(estimators=[
     ('catboost', clf_catboost)
 ], voting='soft')
 
+# sfs = SFS(voting_clf, 
+#           k_features='best', 
+#           forward=True, 
+#           floating=False, 
+#           scoring='f1', 
+#           cv=5)
+
+# sfs.fit(X_train, y_train)
+# selected_features = sfs.k_feature_idx_
+# print("Selected features:", selected_features)
+# X_train_selected = sfs.transform(X_train)
+# X_valid_selected = sfs.transform(X_valid)
 
 thre = 0.4
 
 # 训练和评估
 voting_clf.fit(X_train, y_train)
+# voting_clf.fit(X_train_selected, y_train)
 
 
 y_pred_voting_valid = voting_clf.predict_proba(X_valid)
+# y_pred_voting_valid = voting_clf.predict_proba(X_valid_selected)
 print("---------- VotingClassifier Valid Eval ----------")
 eval(y_pred_voting_valid, y_valid, thre)
 
@@ -212,6 +252,8 @@ test_dataset.discretization()
 test_dataset.normalized()
 data=test_dataset.getx()
 y_pred_voting_valid = voting_clf.predict_proba(data)
+# data_selected = sfs.transform(data)
+# y_pred_voting_valid = voting_clf.predict_proba(data_selected)
 print("---------- VotingClassifier Test Eval ----------")
 eval(y_pred_voting_valid, target, thre)
 save_pred(y_pred_voting_valid, thre, '522023330025.txt')
