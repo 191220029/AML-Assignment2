@@ -1,10 +1,9 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
 import numpy as np
-from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 from sklearn.metrics import f1_score
 import copy
-from sklearn.linear_model import LogisticRegression, RidgeClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, GradientBoostingRegressor
@@ -15,10 +14,8 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from sklearn.preprocessing import LabelEncoder
-from imblearn.over_sampling import RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
-from sklearn.impute import SimpleImputer
 
+# 自定义数据集类省略，假设已定义
 class CustomDataset():
     def __init__(self, file_path, selected_columns=None, label_column=None):
         self.data = pd.read_csv(file_path)  # 读取CSV文件
@@ -34,74 +31,100 @@ class CustomDataset():
 
 
     def predict_missing_values(self):
-        data_matrix = self.data_full[self.selected_columns].values
-        mask = np.isnan(data_matrix)
+        # 用训练好的模型预测缺失值
+        missing_data = self.data_full[self.data_full.isna().any(axis=1)]
+        non_missing_data = self.data_full[self.selected_columns].dropna()
         
-        # 简单填补初始缺失值，避免SVD错误
-        imp = SimpleImputer(strategy="mean")
-        data_matrix_imputed = imp.fit_transform(data_matrix)
-        
-        # 使用SVD进行矩阵补全
-        U, sigma, Vt = np.linalg.svd(data_matrix_imputed, full_matrices=False)
-        sigma = np.diag(sigma)
-        
-        # 选择合适的秩，进行低秩近似
-        k = np.linalg.matrix_rank(sigma) // 2
-        U_k = U[:, :k]
-        sigma_k = sigma[:k, :k]
-        Vt_k = Vt[:k, :]
-        
-        # 重建矩阵
-        data_matrix_reconstructed = np.dot(U_k, np.dot(sigma_k, Vt_k))
-        
-        # 仅填补原始数据中的缺失值
-        data_matrix[mask] = data_matrix_reconstructed[mask]
-        self.data_full[self.selected_columns] = data_matrix
-        self.data = self.data_full
-        # # 用训练好的模型预测缺失值
-        # missing_data = self.data_full[self.data_full.isna().any(axis=1)]
-        # non_missing_data = self.data_full[self.selected_columns].dropna()
-        
-        # for column in self.selected_columns:
-        #     if column == self.label_column:
-        #         continue
+        for column in self.selected_columns:
+            if column == self.label_column or not missing_data[column].isna().any():
+                continue
 
-        #     cur_missing_data = self.data_full[self.data_full[column].isna()]
-        #     if(cur_missing_data.size == 0):
-        #         continue
+            cur_missing_data = self.data_full[self.data_full[column].isna()]
+            if(cur_missing_data.size == 0):
+                continue
 
-        #     model = GradientBoostingRegressor(random_state=42)
-        #     y_non_missing = non_missing_data[column]
+
+            # 检查列是否为分类变量
+            # model = CatBoostClassifier(verbose=0)
+            if non_missing_data[column].dtype == 'object':
+                # model = GradientBoostingClassifier(random_state=42)
+                # model = CatBoostClassifier(verbose=0)
+                clf_gbdt = GradientBoostingClassifier()
+                clf_catboost = CatBoostClassifier(verbose=0)
+                model = VotingClassifier(estimators=[
+                    ('gbdt', clf_gbdt),
+                    ('catboost', clf_catboost)
+                ], voting='soft')
+                label_encoder = LabelEncoder()
+                y_non_missing = label_encoder.fit_transform(non_missing_data[column])
+            else:
+                model = GradientBoostingRegressor(random_state=42)
+                y_non_missing = non_missing_data[column]
                 
-        #     # 拆分有缺失值的列为特征和标签
-        #     X_non_missing = non_missing_data.drop(columns=[column])
+            # 拆分有缺失值的列为特征和标签
+            X_non_missing = non_missing_data.drop(columns=[column])
             
-        #     # 训练模型
-        #     model.fit(X_non_missing, y_non_missing)
+            # 训练模型
+            model.fit(X_non_missing, y_non_missing)
             
-        #     # 预测缺失值
-        #     X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
-        #     predicted = model.predict(X_missing)
-        #     cur_missing_data.loc[:, column] = predicted
-        #     self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
+            # 预测缺失值
+            X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
+            predicted = model.predict(X_missing)
+            
+            if non_missing_data[column].dtype == 'object':
+                predicted = label_encoder.inverse_transform(predicted)
+            
+            cur_missing_data.loc[:, column] = predicted
+            self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
     
-        # self.data_full = self.data_full[self.selected_columns]
-        # train_dataset.data = train_dataset.data_full
+        self.data_full = self.data_full[self.selected_columns]
+        train_dataset.data = train_dataset.data_full
     
     def Handling_missing_values(self):
         self.data = self.data.dropna()
 
-
     def print(self):
         dataset = self.data[self.selected_columns]
         print(dataset)
+    def describe(self):
+        # 使用describe()函数获取每一列的统计信息，包括最大值和最小值
+        column_stats = self.data[self.selected_columns].describe()
+        # 使用value_counts()函数获取每一列不同属性值的数量和属性值列表
+        column_value_counts = {}
+        for column in self.selected_columns:
+            value_counts = self.data[column].value_counts()
+            column_value_counts[column] = {
+                'count': len(value_counts),
+                'values': value_counts.index.tolist()
+            }
+        print("-"*20)
+        # 打印每一列的统计信息
+        print("列的最大值和最小值：")
+        print(column_stats)
+
+        # 打印每一列不同属性值的数量和属性值列表
+        print("每一列不同属性值的数量和属性值列表：")
+        for column, info in column_value_counts.items():
+            print(f"列名: {column}")
+            print(f"不同属性值的数量: {info['count']}")
+            if(info['count'] <= 10):
+                print(f"属性值列表: {info['values']}")
+            else:
+                print(f"属性值列表: {info['values'][:10]} ...")
+            print()
+        print("每一列的属性类型:")
+        print(self.data[self.selected_columns].dtypes)
+
     def discretization(self):
+        # print("-"*50)
         for column in self.selected_columns:
             data_column = self.data[column]
             if(data_column.dtype == 'str' or data_column.dtype == 'object'):
+                # print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
                 self.data[column] = self.data[column].astype('category').cat.codes
             data_column = self.data_full[column]
             if(data_column.dtype == 'str' or data_column.dtype == 'object'):
+                # print(f'Column [{column}] need to be discretized (No Number Relationship! If needed, please code separately)')
                 self.data_full[column] = self.data_full[column].astype('category').cat.codes
     def normalized(self):
         legal_columns = copy.deepcopy(self.selected_columns)
@@ -168,35 +191,31 @@ test_field = ['CreditScore','Geography','Gender','Age',\
 
 # 读取并处理训练集数据
 train_dataset = CustomDataset('./data/train.csv', train_field)
+# train_dataset.describe()
 train_dataset.discretization()
 train_dataset.normalized()
+# train_dataset.describe()
 
 # 定义各模型
 clf_knn = KNeighborsClassifier()
 clf_nb = GaussianNB()
 clf_dt = DecisionTreeClassifier()
-clf_rf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-clf_xgbc = XGBClassifier()
+clf_rf = RandomForestClassifier(random_state=42)
 clf_lr = LogisticRegression()
 clf_svm = SVC(probability=True)
 clf_mlp = MLPClassifier()
 clf_gbdt = GradientBoostingClassifier()
 clf_xgb = XGBClassifier()
 clf_lgb = LGBMClassifier()
-clf_catboost = CatBoostClassifier(verbose=0)
+clf_catboost = CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)
 
-train_dataset.predict_missing_values()
+# train_dataset.predict_missing_values()
+train_dataset.discretization()
 train_dataset.normalized()
+# train_dataset.describe()
 
 data, target = train_dataset.getx(), train_dataset.gety()
 X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
-
-
-
-# oversample = RandomOverSampler(random_state=42)
-# X_train, y_train = oversample.fit_resample(X_train, y_train)
-# undersample = RandomUnderSampler(random_state=42)
-# X_train, y_train = undersample.fit_resample(X_train, y_train)
 
 voting_clf = VotingClassifier(estimators=[
     # ('knn', clf_knn),
@@ -206,34 +225,17 @@ voting_clf = VotingClassifier(estimators=[
     # ('lr', clf_lr),
     # ('svm', clf_svm),
     # ('mlp', clf_mlp),
-    # ('xgbc', clf_xgbc),
-    # ('lgb', clf_lgb),
     ('gbdt', clf_gbdt),
-    ('catboost', clf_catboost)
+    ('catboost', clf_catboost),
+    # ('rf', RandomForestClassifier(max_depth=3, max_features=4,min_samples_leaf=4, min_samples_split=4, n_estimators=100,)),
 ], voting='soft')
 
-# sfs = SFS(voting_clf, 
-#           k_features='best', 
-#           forward=True, 
-#           floating=False, 
-#           scoring='f1', 
-#           cv=5)
-
-# sfs.fit(X_train, y_train)
-# selected_features = sfs.k_feature_idx_
-# print("Selected features:", selected_features)
-# X_train_selected = sfs.transform(X_train)
-# X_valid_selected = sfs.transform(X_valid)
 
 thre = 0.4
 
 # 训练和评估
 voting_clf.fit(X_train, y_train)
-# voting_clf.fit(X_train_selected, y_train)
-
-
 y_pred_voting_valid = voting_clf.predict_proba(X_valid)
-# y_pred_voting_valid = voting_clf.predict_proba(X_valid_selected)
 print("---------- VotingClassifier Valid Eval ----------")
 eval(y_pred_voting_valid, y_valid, thre)
 
@@ -251,10 +253,7 @@ test_dataset.discretization()
 test_dataset.normalized()
 data=test_dataset.getx()
 y_pred_voting_valid = voting_clf.predict_proba(data)
-# data_selected = sfs.transform(data)
-# y_pred_voting_valid = voting_clf.predict_proba(data_selected)
 print("---------- VotingClassifier Test Eval ----------")
 eval(y_pred_voting_valid, target, thre)
 save_pred(y_pred_voting_valid, thre, '522023330025.txt')
-
 

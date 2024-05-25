@@ -2,6 +2,7 @@ import pandas as pd
 import copy
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import f1_score
 from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from sklearn.neural_network import MLPClassifier
@@ -9,13 +10,13 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.preprocessing import LabelEncoder
 from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 from catboost import CatBoostClassifier
 from scipy.sparse import csr_matrix
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import PolynomialFeatures
 
 def eval(pred, y_true, mu):
     y_pred = np.where(pred[:, 1] > mu, 1, 0)
@@ -93,41 +94,58 @@ df_test = DfPrepPipeline(df_test,df_train.columns,minVec,maxVec)
 df_test = df_test.mask(np.isinf(df_test))
 df_test = df_test.dropna()
 
+def best_model(model):
+    print(model.best_score_)    
+    print(model.best_params_)
+    print(model.best_estimator_)
+
+# Fit random forest classifier
+# param_grid = {'max_depth': [3, 5, 6, 7, 8], 'max_features': [2,4,6,7,8,9],'n_estimators':[50,100],'min_samples_split': [3, 5, 6, 7]}
+# RanFor_grid = GridSearchCV(RandomForestClassifier(), param_grid, cv=5, refit=True, verbose=0)
+# RanFor_grid.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
+# print(best_model(RanFor_grid))
+
+# param_grid = {'max_depth': [3, 5, 6, 7, 8, 10], 'n_estimators': [50,100], 'learning_rate': [1,0.1,0.01]}
+# RanFor_grid = GridSearchCV(CatBoostClassifier(verbose=0), param_grid, cv=5, refit=True, verbose=0)
+# RanFor_grid.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
+# print(best_model(RanFor_grid))
+
+# param_grid = {'max_depth': [3, 5, 6, 7, 8, 10], 'n_estimators': [50,100], 'learning_rate': [1,0.1,0.01]}
+# RanFor_grid = GridSearchCV(GradientBoostingClassifier(verbose=0), param_grid, cv=5, refit=True, verbose=0)
+# RanFor_grid.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
+# print(best_model(RanFor_grid))
+
+X_train, y_train = df_train.loc[:, df_train.columns != 'Exited'], df_train.Exited
+# oversample = RandomOverSampler(random_state=42)
+# X_train, y_train = oversample.fit_resample(df_train.loc[:, df_train.columns != 'Exited'], df_train.Exited)
+# undersample = RandomUnderSampler(random_state=42)
+# X_train, y_train = undersample.fit_resample(df_train.loc[:, df_train.columns != 'Exited'], df_train.Exited)
+
+df_verify=pd.read_csv("data/test_verify.csv")
+df_verify=DfPrepPipeline(df_verify,df_train.columns,minVec,maxVec)
 
 voting_clf = VotingClassifier(estimators=[
-    ('gbdt', GradientBoostingClassifier()),
-    ('catboost', CatBoostClassifier(verbose=0))
+    ('gbdt0', GradientBoostingClassifier()),
+    ('catboost0', CatBoostClassifier(verbose=0)),
+    ('rf', RandomForestClassifier(verbose=0)),
+    # ('catboost', CatBoostClassifier(verbose=0, learning_rate=0.1, max_depth=8, n_estimators=100)),
+    # ('gbc', GradientBoostingClassifier(verbose=0, learning_rate=0.1, max_depth=3, n_estimators=100))
 ], voting='soft')
-# ada_clf = AdaBoostClassifier(n_estimators=100000, random_state=42, learning_rate=0.01)
 
-# 训练和评估
-voting_clf.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
-# ada_clf.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
+
+# # # 训练和评估
+voting_clf.fit(X_train, y_train)
 
 y_pred_voting_valid = voting_clf.predict_proba(df_test.loc[:, df_train.columns != 'Exited'])
 print("---------- VotingClassifier Valid Eval ----------")
 eval(y_pred_voting_valid, df_test.Exited, 0.4)
-# y_pred_voting_valid = ada_clf.predict_proba(df_test.loc[:, df_train.columns != 'Exited'])
-# print("---------- Adaboosting Valid Eval ----------")
-# eval(y_pred_voting_valid, df_test.Exited, 0.4)
+eval(voting_clf.predict_proba(df_verify.loc[:, df_verify.columns != 'Exited']), df_verify.Exited, 0.4)
 
-df_test=pd.read_csv("data/test_verify.csv")
-df_test = DfPrepPipeline(df_test,df_train.columns,minVec,maxVec)
-eval(voting_clf.predict_proba(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited, 0.4)
-
-RF = RandomForestClassifier(bootstrap=True, class_weight=None, criterion='gini',max_depth=8, max_features=6, max_leaf_nodes=None,min_impurity_decrease=0.0,
-                            min_samples_leaf=1, min_samples_split=3,min_weight_fraction_leaf=0.0, n_estimators=50, n_jobs=None,
-                            oob_score=False, random_state=None, verbose=0,warm_start=False)
-RF.fit(df_train.loc[:, df_train.columns != 'Exited'],df_train.Exited)
-eval(RF.predict_proba(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited, 0.4)
-
-poly2 = PolynomialFeatures(degree=2)
-df_train.dropna()
-df_train_pol2 = poly2.fit_transform(df_train.loc[:, df_train.columns != 'Exited'])
-log_pol2 = LogisticRegression(C=10, class_weight=None, dual=False, fit_intercept=True,intercept_scaling=1, max_iter=300, multi_class='auto', n_jobs=None, 
-                              penalty='l2', random_state=None, solver='liblinear',tol=0.0001, verbose=0, warm_start=False)
-log_pol2.fit(df_train_pol2,df_train.Exited)
-df_test_pol2 = poly2.fit_transform(df_test.loc[:, df_train.columns != 'Exited'])
-eval(log_pol2.predict_proba(df_test_pol2), df_test.Exited, 0.4)
+# RF = RandomForestClassifier(bootstrap=True, class_weight=None, criterion='gini',max_depth=8, max_features=9, max_leaf_nodes=None,min_impurity_decrease=0.0,
+#                             min_samples_leaf=1, min_samples_split=7,min_weight_fraction_leaf=0.0, n_estimators=100, n_jobs=None,
+#                             oob_score=False, random_state=None, verbose=0,warm_start=False)
+# RF.fit(X_train, y_train)
+# eval(RF.predict_proba(df_test.loc[:, df_test.columns != 'Exited']), df_test.Exited, 0.5)
+# eval(RF.predict_proba(df_verify.loc[:, df_verify.columns != 'Exited']), df_verify.Exited, 0.5)
 
 
