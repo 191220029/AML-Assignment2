@@ -14,6 +14,11 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from sklearn.preprocessing import LabelEncoder
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve
+import matplotlib.pyplot as plt
 
 # 自定义数据集类省略，假设已定义
 class CustomDataset():
@@ -42,24 +47,9 @@ class CustomDataset():
             cur_missing_data = self.data_full[self.data_full[column].isna()]
             if(cur_missing_data.size == 0):
                 continue
-
-
-            # 检查列是否为分类变量
-            # model = CatBoostClassifier(verbose=0)
-            if non_missing_data[column].dtype == 'object':
-                # model = GradientBoostingClassifier(random_state=42)
-                # model = CatBoostClassifier(verbose=0)
-                clf_gbdt = GradientBoostingClassifier()
-                clf_catboost = CatBoostClassifier(verbose=0)
-                model = VotingClassifier(estimators=[
-                    ('gbdt', clf_gbdt),
-                    ('catboost', clf_catboost)
-                ], voting='soft')
-                label_encoder = LabelEncoder()
-                y_non_missing = label_encoder.fit_transform(non_missing_data[column])
-            else:
-                model = GradientBoostingRegressor(random_state=42)
-                y_non_missing = non_missing_data[column]
+            # model = GradientBoostingRegressor(random_state=42)
+            model = CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)
+            y_non_missing = non_missing_data[column]
                 
             # 拆分有缺失值的列为特征和标签
             X_non_missing = non_missing_data.drop(columns=[column])
@@ -70,9 +60,6 @@ class CustomDataset():
             # 预测缺失值
             X_missing = cur_missing_data[self.selected_columns].drop(columns=[column])
             predicted = model.predict(X_missing)
-            
-            if non_missing_data[column].dtype == 'object':
-                predicted = label_encoder.inverse_transform(predicted)
             
             cur_missing_data.loc[:, column] = predicted
             self.data_full = pd.concat([non_missing_data, cur_missing_data], axis=0)
@@ -86,34 +73,6 @@ class CustomDataset():
     def print(self):
         dataset = self.data[self.selected_columns]
         print(dataset)
-    def describe(self):
-        # 使用describe()函数获取每一列的统计信息，包括最大值和最小值
-        column_stats = self.data[self.selected_columns].describe()
-        # 使用value_counts()函数获取每一列不同属性值的数量和属性值列表
-        column_value_counts = {}
-        for column in self.selected_columns:
-            value_counts = self.data[column].value_counts()
-            column_value_counts[column] = {
-                'count': len(value_counts),
-                'values': value_counts.index.tolist()
-            }
-        print("-"*20)
-        # 打印每一列的统计信息
-        print("列的最大值和最小值：")
-        print(column_stats)
-
-        # 打印每一列不同属性值的数量和属性值列表
-        print("每一列不同属性值的数量和属性值列表：")
-        for column, info in column_value_counts.items():
-            print(f"列名: {column}")
-            print(f"不同属性值的数量: {info['count']}")
-            if(info['count'] <= 10):
-                print(f"属性值列表: {info['values']}")
-            else:
-                print(f"属性值列表: {info['values'][:10]} ...")
-            print()
-        print("每一列的属性类型:")
-        print(self.data[self.selected_columns].dtypes)
 
     def discretization(self):
         # print("-"*50)
@@ -177,6 +136,7 @@ def eval(pred,y_true,mu):
     y_pred = np.where(pred[:,1] > mu,1,0)
     f1 = f1_score(y_true, y_pred)
     print("f1 : ",f1)
+    return f1
 
 def save_pred(pred, mu, pth):
     y_pred = np.where(pred[:,1] > mu,1,0)
@@ -184,17 +144,21 @@ def save_pred(pred, mu, pth):
         for x in y_pred.tolist():
             f.write(f"{int(x)}\n")
 
+def get_auc_scores(y_actual, method,method2):
+    auc_score = roc_auc_score(y_actual, method); 
+    fpr_df, tpr_df, _ = roc_curve(y_actual, method2); 
+    return (auc_score, fpr_df, tpr_df)
+
 train_field = ['CreditScore','Geography','Gender','Age',\
                'Tenure','Balance','NumOfProducts','HasCrCard','IsActiveMember','EstimatedSalary', 'Exited']
 test_field = ['CreditScore','Geography','Gender','Age',\
                'Tenure','Balance','NumOfProducts','HasCrCard','IsActiveMember','EstimatedSalary']
 
+thre = 0.4
 # 读取并处理训练集数据
 train_dataset = CustomDataset('./data/train.csv', train_field)
-# train_dataset.describe()
 train_dataset.discretization()
 train_dataset.normalized()
-# train_dataset.describe()
 
 # 定义各模型
 clf_knn = KNeighborsClassifier()
@@ -203,57 +167,103 @@ clf_dt = DecisionTreeClassifier()
 clf_rf = RandomForestClassifier(random_state=42)
 clf_lr = LogisticRegression()
 clf_svm = SVC(probability=True)
-clf_mlp = MLPClassifier()
-clf_gbdt = GradientBoostingClassifier()
+clf_mlp = MLPClassifier(beta_1=0.7, beta_2=0.777)
+clf_gbdt = GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)
 clf_xgb = XGBClassifier()
-clf_lgb = LGBMClassifier()
+clf_lgb = LGBMClassifier(verbose=0)
 clf_catboost = CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)
 
-# train_dataset.predict_missing_values()
 train_dataset.discretization()
 train_dataset.normalized()
-# train_dataset.describe()
+# train_dataset.predict_missing_values()
+# train_dataset.normalized()
 
 data, target = train_dataset.getx(), train_dataset.gety()
 X_train, X_valid, y_train, y_valid = train_test_split(data, target, test_size=0.2, random_state=42, shuffle=True)
 
-voting_clf = VotingClassifier(estimators=[
-    # ('knn', clf_knn),
-    # ('nb', clf_nb),
-    # ('dt', clf_dt),
-    # ('rf', clf_rf),
-    # ('lr', clf_lr),
-    # ('svm', clf_svm),
-    # ('mlp', clf_mlp),
-    ('gbdt', clf_gbdt),
-    ('catboost', clf_catboost),
-    # ('rf', RandomForestClassifier(max_depth=3, max_features=4,min_samples_leaf=4, min_samples_split=4, n_estimators=100,)),
-], voting='soft')
+# oversample = RandomOverSampler(random_state=42)
+# X_train, y_train = oversample.fit_resample(X_train, y_train)
+# undersample = RandomUnderSampler(random_state=42)
+# X_train, y_train = undersample.fit_resample(X_train, y_train)
 
-
-thre = 0.4
-
-# 训练和评估
-voting_clf.fit(X_train, y_train)
-y_pred_voting_valid = voting_clf.predict_proba(X_valid)
-print("---------- VotingClassifier Valid Eval ----------")
-eval(y_pred_voting_valid, y_valid, thre)
 
 verify_dataset = CustomDataset('./data/test_verify.csv', train_field)
 verify_dataset.discretization()
 verify_dataset.normalized()
 _, target = verify_dataset.getx(), verify_dataset.gety()
-# y_pred_voting_valid = voting_clf.predict_proba(data)
-# print("---------- VotingClassifier Valid Eval ----------")
-# eval(y_pred_voting_valid, target, thre)
-# save_pred(y_pred_voting_valid, thre, 'verify.txt')
 
 test_dataset = CustomTestDataset('./data/test.csv', test_field)
 test_dataset.discretization()
 test_dataset.normalized()
-data=test_dataset.getx()
-y_pred_voting_valid = voting_clf.predict_proba(data)
-print("---------- VotingClassifier Test Eval ----------")
-eval(y_pred_voting_valid, target, thre)
-save_pred(y_pred_voting_valid, thre, '522023330025.txt')
+test_data=test_dataset.getx()
 
+plt.figure(dpi=800,figsize=(14,8))
+estimators = [
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80))], 'gdbt'],
+    [[('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost'],
+    [[('lgbm', LGBMClassifier(verbose=0))], 'lgbm'],
+    [[('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'mlp'],
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost+gdbt'],
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', LGBMClassifier(verbose=0))], 'lgbm+gdbt'],
+    [[('lgbm', LGBMClassifier(verbose=0)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost+lgbm'],
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+gdbt+mlp'],
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0))], 'catboost+gdbt+lgbm'],
+    [[('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+lgbm+mlp'],
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'gdbt+lgbm+mlp'],
+    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+gdbt+lgbm+mlp'],
+]
+
+best_f1 = 0.0
+for estimator in estimators:
+    voting_clf = VotingClassifier(estimators=estimator[0], voting='soft')
+    voting_clf.fit(X_train, y_train)
+    y_pred_voting_valid = voting_clf.predict_proba(test_data)
+    print(f"---------- {estimator[1]} Test Eval ----------")
+    f1 = eval(y_pred_voting_valid, target, thre)
+    if f1 > best_f1:
+        print(f"save predicts with better f1={f1}")
+        save_pred(y_pred_voting_valid, thre, '522023330025.txt')
+        best_f1 = f1
+
+    # auc_vote, fpr_vote, tpr_vote = get_auc_scores(target, voting_clf.predict(test_data),voting_clf.predict_proba(test_data)[:,1])
+    # plt.plot(fpr_vote, tpr_vote, label = estimator[1] + ' Score: ' + str(round(auc_vote, 5)))
+    auc_vote, fpr_vote, tpr_vote = get_auc_scores(y_train, voting_clf.predict(X_train),voting_clf.predict_proba(X_train)[:,1])
+    plt.plot(fpr_vote, tpr_vote, label = estimator[1] + ' Score: ' + str(round(auc_vote, 5)))
+
+    
+
+plt.plot([0,1], [0,1], 'k--', label = 'Random: 0.5')
+
+plt.xlabel('False positive rate')
+plt.ylabel('True positive rate')
+plt.title('ROC Curve')
+plt.legend(loc='best')
+# plt.savefig('roc_results_ratios.png')
+
+# voting_clf = VotingClassifier(estimators=[
+#     # ('knn', clf_knn),
+#     # ('nb', clf_nb),
+#     # ('dt', clf_dt),
+#     # ('rf', clf_rf),
+#     # ('lr', clf_lr),
+#     # ('svm', clf_svm),
+#     # ('mlp', clf_mlp),
+#     ('gbdt', clf_gbdt),
+#     ('catboost', clf_catboost),
+#     # ('rf', RandomForestClassifier(max_depth=5, max_features=6, n_estimators=104,)),
+#     ('mlp', clf_mlp)
+# ], voting='soft')
+
+
+
+# # 训练和评估
+# voting_clf.fit(X_train, y_train)
+# y_pred_voting_valid = voting_clf.predict_proba(X_valid)
+# print("---------- VotingClassifier Valid Eval ----------")
+# eval(y_pred_voting_valid, y_valid, thre)
+
+
+# y_pred_voting_valid = voting_clf.predict_proba(test_data)
+# print("---------- VotingClassifier Test Eval ----------")
+# eval(y_pred_voting_valid, target, thre)
+# save_pred(y_pred_voting_valid, thre, '522023330025.txt')

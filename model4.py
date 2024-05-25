@@ -103,11 +103,9 @@ df_verify=pd.read_csv("data/test_verify.csv")
 df_verify=DfPrepPipeline(df_verify,df_train.columns,minVec,maxVec)
 
 voting_clf = VotingClassifier(estimators=[
-    ('gbdt', GradientBoostingClassifier()),
+    ('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),
     # ('catboost', CatBoostClassifier(verbose=0)),
-    ('rf', RandomForestClassifier(bootstrap=True,max_depth=4, max_features=10, max_leaf_nodes=2,min_impurity_decrease=0.3,
-                            min_samples_leaf=4, min_samples_split=4, n_estimators=100,
-                            verbose=0)),
+    ('rf', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),
     # ('gbc', GradientBoostingClassifier(verbose=0, learning_rate=0.1, max_depth=3, n_estimators=100))
 ], voting='soft')
 
