@@ -20,7 +20,6 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 import matplotlib.pyplot as plt
 
-# 自定义数据集类省略，假设已定义
 class CustomDataset():
     def __init__(self, file_path, selected_columns=None, label_column=None):
         self.data = pd.read_csv(file_path)  # 读取CSV文件
@@ -155,12 +154,10 @@ test_field = ['CreditScore','Geography','Gender','Age',\
                'Tenure','Balance','NumOfProducts','HasCrCard','IsActiveMember','EstimatedSalary']
 
 thre = 0.4
-# 读取并处理训练集数据
 train_dataset = CustomDataset('./data/train.csv', train_field)
 train_dataset.discretization()
 train_dataset.normalized()
 
-# 定义各模型
 clf_knn = KNeighborsClassifier()
 clf_nb = GaussianNB()
 clf_dt = DecisionTreeClassifier()
