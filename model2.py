@@ -133,7 +133,7 @@ class CustomTestDataset():
 
 def eval(pred,y_true,mu):
     y_pred = np.where(pred[:,1] > mu,1,0)
-    f1 = f1_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred, average='macro')
     print("f1 : ",f1)
     return f1
 
@@ -196,31 +196,38 @@ test_data=test_dataset.getx()
 
 plt.figure(dpi=800,figsize=(14,8))
 estimators = [
-    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80))], 'gdbt'],
-    [[('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost'],
-    [[('lgbm', LGBMClassifier(verbose=0))], 'lgbm'],
-    [[('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'mlp'],
+    # [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80))], 'gdbt'],
+    # [[('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost'],
+    # [[('lgbm', LGBMClassifier(verbose=0))], 'lgbm'],
+    # [[('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'mlp'],
     [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost+gdbt'],
-    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', LGBMClassifier(verbose=0))], 'lgbm+gdbt'],
-    [[('lgbm', LGBMClassifier(verbose=0)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost+lgbm'],
-    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+gdbt+mlp'],
-    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0))], 'catboost+gdbt+lgbm'],
-    [[('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+lgbm+mlp'],
-    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'gdbt+lgbm+mlp'],
-    [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+gdbt+lgbm+mlp'],
+    # [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', LGBMClassifier(verbose=0))], 'lgbm+gdbt'],
+    # [[('lgbm', LGBMClassifier(verbose=0)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105))], 'catboost+lgbm'],
+    # [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+gdbt+mlp'],
+    # [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0))], 'catboost+gdbt+lgbm'],
+    # [[('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+lgbm+mlp'],
+    # [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'gdbt+lgbm+mlp'],
+    # [[('gbdt', GradientBoostingClassifier(verbose=0, learning_rate=0.1, random_state=42, n_estimators=80)),('catboost', CatBoostClassifier(verbose=0, learning_rate=0.14, max_depth=8, n_estimators=105)),('lgbm', LGBMClassifier(verbose=0)),('mlp', MLPClassifier(beta_1=0.8, beta_2=0.888))], 'catboost+gdbt+lgbm+mlp'],
 ]
 
 best_f1 = 0.0
+best_model = ''
 for estimator in estimators:
     voting_clf = VotingClassifier(estimators=estimator[0], voting='soft')
     voting_clf.fit(X_train, y_train)
+    
+    y_pred_voting_valid = voting_clf.predict_proba(X_valid)
+    print(f"---------- {estimator[1]} Verify Eval ----------")
+    f1 = eval(y_pred_voting_valid, y_valid, thre)
+
     y_pred_voting_valid = voting_clf.predict_proba(test_data)
     print(f"---------- {estimator[1]} Test Eval ----------")
     f1 = eval(y_pred_voting_valid, target, thre)
     if f1 > best_f1:
-        print(f"save predicts with better f1={f1}")
+        print(f"save predicts with better macro-f1={f1}")
         save_pred(y_pred_voting_valid, thre, '522023330025.txt')
         best_f1 = f1
+        best_model = estimator[1]
 
     # auc_vote, fpr_vote, tpr_vote = get_auc_scores(target, voting_clf.predict(test_data),voting_clf.predict_proba(test_data)[:,1])
     # plt.plot(fpr_vote, tpr_vote, label = estimator[1] + ' Score: ' + str(round(auc_vote, 5)))
@@ -235,7 +242,9 @@ plt.xlabel('False positive rate')
 plt.ylabel('True positive rate')
 plt.title('ROC Curve')
 plt.legend(loc='best')
-# plt.savefig('roc_results_ratios.png')
+plt.savefig('roc_results_ratios.png')
+
+print(f"Best model is {best_model}, macro-f1={best_f1}")
 
 # voting_clf = VotingClassifier(estimators=[
 #     # ('knn', clf_knn),
